@@ -1,6 +1,5 @@
-// sdhealth.c
-// Member 1: Kernel Device Driver Lead
-// Purpose: Core Linux kernel module infrastructure for SD Card Health Monitor
+// Creates the Linux kernel module infrastructure for the SD Card Health Monitoring System.
+// This module creates /dev/sdhealth and allows user programs to communicate with the kernel driver through read() and write().
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -13,10 +12,13 @@
 #define DEVICE_NAME "sdhealth"
 #define CLASS_NAME  "sdhealth_class"
 
-static dev_t dev_number;
-static struct cdev sdhealth_cdev;
-static struct class *sdhealth_class;
-static struct device *sdhealth_device;
+static dev_t dev_number;                 // stores major and minor device numbers
+static struct cdev sdhealth_cdev;        // character device structure
+static struct class *sdhealth_class;     // device class shown under /sys/class
+static struct device *sdhealth_device;   // represents /dev/sdhealth
+
+static unsigned long READ_count = 0;     // stores SD card read operations
+static unsigned long WRITE_count = 0;    // stores SD card write operations
 
 static int sdhealth_open(struct inode *inode, struct file *file)
 {
@@ -30,22 +32,53 @@ static int sdhealth_release(struct inode *inode, struct file *file)
     return 0;
 }
 
-// Placeholder read/write functions.
-// Member 3 can expand these later.
+static void update_stats(void)
+{
+    struct file *f;
+    char buf[256];
+    loff_t pos = 0;
+    ssize_t bytes_read;
+
+    f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);
+    if (IS_ERR(f)) {
+        printk(KERN_WARNING "[SDHEALTH] Failed to open /sys/block/mmcblk0/stat\n");
+        return;
+    }
+
+    bytes_read = kernel_read(f, buf, sizeof(buf) - 1, &pos);
+    filp_close(f, NULL);
+
+    if (bytes_read <= 0) {
+        printk(KERN_WARNING "[SDHEALTH] Failed to read SD card stats\n");
+        return;
+    }
+
+    buf[bytes_read] = '\0';
+
+    sscanf(buf, "%lu %*u %*u %*u %lu", &READ_count, &WRITE_count);
+}
+
 static ssize_t sdhealth_read(struct file *file, char __user *buffer,
                              size_t len, loff_t *offset)
 {
-    char msg[] = "SD Health Monitor active\n";
-    int msg_len = strlen(msg);
+    char msg[128];
+    int msg_len;
 
-    if (*offset >= msg_len)
+    if (*offset > 0)
         return 0;
+
+    update_stats();
+
+    msg_len = snprintf(msg, sizeof(msg),
+                       "SD Health Monitor\nTotal reads: %lu\nTotal writes: %lu\n",
+                       READ_count, WRITE_count);
 
     if (copy_to_user(buffer, msg, msg_len))
         return -EFAULT;
 
     *offset += msg_len;
-    printk(KERN_INFO "[SDHEALTH] Read operation completed\n");
+
+    printk(KERN_INFO "[SDHEALTH] Read statistics sent to user space\n");
 
     return msg_len;
 }
@@ -135,6 +168,6 @@ module_init(sdhealth_init);
 module_exit(sdhealth_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Tim");
+MODULE_AUTHOR("G V Timothy");
 MODULE_DESCRIPTION("SD Card Health Monitoring Kernel Device Driver");
-MODULE_VERSION("1.0");
+MODULE_VERSION("2.0");
