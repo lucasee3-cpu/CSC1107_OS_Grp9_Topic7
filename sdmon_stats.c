@@ -17,13 +17,13 @@ static void update_stats(void){       // retrieve SD statistics from the kernel 
     loff_t pos = 0;                   // file position (offset), means to start reading from the beginning of the file
                                       // set to 0 because each update should read fresh from the start
 
-    f = flip_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);  // this function is to open this sysfs file in the kernel space
+    f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);  // this function is to open this sysfs file in the kernel space
     if (IS_ERR(f)){                   // if there is an error, stop the function immediately and do not crash the kernel
         return;
     }
 
     kernel_read(f, buf, sizeof(buf)-1, &pos);  // read the contents of the file into buf, buf should have the raw SD statistics text
-    flip_close(f, NULL);              // release the file once done
+    filp_close(f, NULL);              // release the file once done
 
     sscanf(buf, "%lu %*lu %*lu %*lu %lu", &READ_count, &WRITE_count); // give me the first and fifth field
     // %lu - reads this number
@@ -59,9 +59,8 @@ static ssize_t sdmon_read(     // this is the read handler, Linux will call this
 }
 
 
-
-//
-
+static int sdmon_open(struct inode *inode, struct file *file);
+static int sdmon_release(struct inode *inode, struct file *file);
 
 
 static struct file_operations fops = {
