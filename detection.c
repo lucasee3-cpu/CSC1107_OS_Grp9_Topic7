@@ -4,24 +4,28 @@
 
 #include "detection.h"
 
-#define WRITE_THRESHOLD 50000
-#define READ_THRESHOLD 100000
-#define WEAR_LIMIT 200000
+#define WRITE_THRESHOLD 1000
+#define READ_THRESHOLD 5000
 
-static char event_log[MAX_LOGS][128];
+#define MAX_LOGS 50
+#define LOG_SIZE 128
+
+static char event_log[MAX_LOGS][LOG_SIZE];
 static int log_index = 0;
 
-static int write_alert_active = 0;
-static int read_alert_active = 0;
-static int wear_alert_active = 0;
+// Prevent warning spam
+static int write_alert_sent = 0;
+static int read_alert_sent = 0;
 
+// Forward declaration
 static void save_event(const char *msg);
 
+// Store an event into a circular log buffer.
 static void save_event(const char *msg)
 {
     snprintf(
         event_log[log_index],
-        sizeof(event_log[log_index]),
+        LOG_SIZE,
         "%s",
         msg
     );
@@ -32,101 +36,113 @@ static void save_event(const char *msg)
         log_index = 0;
 }
 
-static void log_with_timestamp(const char *message)
+//Print all stored logs. 
+void print_event_logs(void)
 {
-    struct timespec64 ts;
+    int i;
 
-    char final_msg[128];
+    printk(KERN_INFO
+           "[SDHEALTH] ===== Event Log History =====\n");
 
-    ktime_get_real_ts64(&ts);
+    for (i = 0; i < MAX_LOGS; i++)
+    {
+        if (strlen(event_log[i]) > 0)
+        {
+            printk(KERN_INFO
+                   "[SDHEALTH LOG] %s\n",
+                   event_log[i]);
+        }
+    }
 
-    snprintf(
-        final_msg,
-        sizeof(final_msg),
-        "[%lld] %s",
-        (long long)ts.tv_sec,
-        message
-    );
-
-    save_event(final_msg);
-
-    printk(
-        KERN_WARNING
-        "[SDHEALTH] %s\n",
-        final_msg
-    );
+    printk(KERN_INFO
+           "[SDHEALTH] ============================\n");
 }
 
+// Main anomaly detection routine
 void check_anomaly(
     unsigned long reads,
     unsigned long writes
 )
 {
+    struct timespec64 ts;
+    char log_msg[LOG_SIZE];
+
+    ktime_get_real_ts64(&ts);
+
+    printk(KERN_INFO,
+           "[SDHEALTH] check_anomaly(): reads=%lu writes=%lu\n",
+           reads,
+           writes);
+
+    // Excessive write activity detection
     if (writes > WRITE_THRESHOLD)
     {
-        if (!write_alert_active)
+        if (!write_alert_sent)
         {
-            log_with_timestamp(
-                "WARNING: Excessive write activity detected"
+            snprintf(
+                log_msg,
+                sizeof(log_msg),
+                "[%lld] WARNING: Excessive write activity detected (%lu writes)",
+                (long long)ts.tv_sec,
+                writes
             );
 
-            write_alert_active = 1;
+            save_event(log_msg);
+
+            printk(KERN_WARNING,
+                   "[SDHEALTH] %s\n",
+                   log_msg);
+
+            write_alert_sent = 1;
         }
     }
     else
     {
-        write_alert_active = 0;
+        write_alert_sent = 0;
     }
 
+    // Excessive read activity detection
     if (reads > READ_THRESHOLD)
     {
-        if (!read_alert_active)
+        if (!read_alert_sent)
         {
-            log_with_timestamp(
-                "WARNING: Excessive read activity detected"
+            snprintf(
+                log_msg,
+                sizeof(log_msg),
+                "[%lld] WARNING: Excessive read activity detected (%lu reads)",
+                (long long)ts.tv_sec,
+                reads
             );
 
-            read_alert_active = 1;
+            save_event(log_msg);
+
+            printk(KERN_WARNING,
+                   "[SDHEALTH] %s\n",
+                   log_msg);
+
+            read_alert_sent = 1;
         }
     }
     else
     {
-        read_alert_active = 0;
+        read_alert_sent = 0;
     }
 
-    if (writes > WEAR_LIMIT)
+    // Example health check.
+    if (writes > (WRITE_THRESHOLD * 10))
     {
-        if (!wear_alert_active)
-        {
-            log_with_timestamp(
-                "ALERT: Potential SD card wear detected"
-            );
-
-            wear_alert_active = 1;
-        }
-    }
-    else
-    {
-        wear_alert_active = 0;
-    }
-
-    if (reads == 0 && writes > 1000)
-    {
-        log_with_timestamp(
-            "ERROR: Possible statistics corruption detected"
+        snprintf(
+            log_msg,
+            sizeof(log_msg),
+            "[%lld] CRITICAL: Possible SD wear detected (%lu writes)",
+            (long long)ts.tv_sec,
+            writes
         );
+
+        save_event(log_msg);
+
+        printk(KERN_ERR,
+               "[SDHEALTH] %s\n",
+               log_msg);
     }
-}
-
-int get_log_count(void)
-{
-    return log_index;
-}
-
-const char *get_log_entry(int index)
-{
-    if (index < 0 || index >= MAX_LOGS)
-        return NULL;
-
-    return event_log[index];
 }

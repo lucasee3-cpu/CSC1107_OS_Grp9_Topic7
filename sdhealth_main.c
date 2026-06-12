@@ -41,16 +41,20 @@ static void update_stats(void)
     ssize_t bytes_read;
 
     f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);
-    if (IS_ERR(f)) {
-        printk(KERN_WARNING "[SDHEALTH] Failed to open /sys/block/mmcblk0/stat\n");
+    if (IS_ERR(f))
+    {
+        printk(KERN_ERR,
+            "[SDHEALTH] ERROR: Failed to open /sys/block/mmcblk0/stat\n");
         return;
     }
 
     bytes_read = kernel_read(f, buf, sizeof(buf) - 1, &pos);
     filp_close(f, NULL);
 
-    if (bytes_read <= 0) {
-        printk(KERN_WARNING "[SDHEALTH] Failed to read SD card stats\n");
+    if (bytes_read <= 0)
+    {
+        printk(KERN_ERR,
+            "[SDHEALTH] ERROR: Failed to read SD card stats\n");
         return;
     }
 
@@ -172,6 +176,7 @@ static int __init sdhealth_init(void)
 
 static void __exit sdhealth_exit(void)
 {
+    print_event_logs();
     device_destroy(sdhealth_class, dev_number);
     class_destroy(sdhealth_class);
     cdev_del(&sdhealth_cdev);
