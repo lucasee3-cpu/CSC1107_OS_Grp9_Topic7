@@ -8,6 +8,7 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/uaccess.h>
+#include "detection.h"
 
 #define DEVICE_NAME "sdhealth"
 #define CLASS_NAME  "sdhealth_class"
@@ -69,9 +70,24 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
 
     update_stats();
 
-    msg_len = snprintf(msg, sizeof(msg),
-                       "SD Health Monitor\nTotal reads: %lu\nTotal writes: %lu\n",
-                       READ_count, WRITE_count);
+    check_anomaly(
+    READ_count,
+    WRITE_count
+    );
+
+    msg_len = snprintf(
+        msg,
+        sizeof(msg),
+        "SD Health Monitor\n"
+        "Total reads: %lu\n"
+        "Total writes: %lu\n",
+        READ_count,
+        WRITE_count
+    );
+
+    /* Prevent copying more bytes than the user requested */
+    if (msg_len > len)
+        msg_len = len;
 
     if (copy_to_user(buffer, msg, msg_len))
         return -EFAULT;

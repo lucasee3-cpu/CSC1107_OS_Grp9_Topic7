@@ -93,7 +93,6 @@ static int sdmon_release(  // close handler
 
 static int __init sdmon_init(void){ 
 
-    static int major;
     major = register_chrdev(0, "sdmon", &fops); // "sdmon" creates this pathing /dev/sdmon, 0 tells Linux to choose a free major number, &fops will be used when interacting with the device
         if (major < 0){
             printk(KERN_ERR "Failed to register sdmon\n");
