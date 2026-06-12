@@ -30,3 +30,14 @@ Unload Module
 ```
 sudo rmmod sdhealth
 ```
+To test anomaly detection:
+Change the WRITE_THRESHOLD & READ_THRESHOLD to a low value like 1
+Then run in terminal:
+make clean
+make
+sudo rmmod sdhealth
+sudo insmod sdhealth.ko
+
+sudo cat /dev/sdhealth
+
+dmesg | tail -20
