@@ -69,7 +69,7 @@ void check_anomaly(
 
     ktime_get_real_ts64(&ts);
 
-    printk(KERN_INFO,
+    printk(KERN_INFO
            "[SDHEALTH] check_anomaly(): reads=%lu writes=%lu\n",
            reads,
            writes);
@@ -89,7 +89,7 @@ void check_anomaly(
 
             save_event(log_msg);
 
-            printk(KERN_WARNING,
+            printk(KERN_WARNING
                    "[SDHEALTH] %s\n",
                    log_msg);
 
@@ -116,7 +116,7 @@ void check_anomaly(
 
             save_event(log_msg);
 
-            printk(KERN_WARNING,
+            printk(KERN_WARNING
                    "[SDHEALTH] %s\n",
                    log_msg);
 
@@ -141,7 +141,7 @@ void check_anomaly(
 
         save_event(log_msg);
 
-        printk(KERN_ERR,
+        printk(KERN_ERR
                "[SDHEALTH] %s\n",
                log_msg);
     }
