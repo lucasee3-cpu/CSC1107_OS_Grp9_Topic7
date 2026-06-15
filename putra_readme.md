@@ -165,8 +165,7 @@ Changes made:
 
 **2. Added `check_anomaly()` call inside `sd_work_handler()`**
 
-Member 1's updated version removed the `check_anomaly()` call from
-`sdhealth_read()`. It was added back into `sd_work_handler()` so
+Added the `check_anomaly()` into `sd_work_handler()` so
 anomaly detection runs every second via the timer:
 
 ```c
