@@ -195,7 +195,7 @@ all skipped fields to use `%*u` instead.
 
 **5. Expanded stats output**
 
-Member 1 added rate and throughput calculations to the stats string:
+Member 2 added rate and throughput calculations to the stats string:
 
 | Stat | Description |
 |------|-------------|
