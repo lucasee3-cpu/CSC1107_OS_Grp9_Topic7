@@ -8,6 +8,9 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/uaccess.h>
+#include <linux/timer.h>
+#include <linux/types.h>
+
 
 #define DEVICE_NAME "sdhealth"
 #define CLASS_NAME  "sdhealth_class"
@@ -16,9 +19,25 @@ static dev_t dev_number;                 // stores major and minor device number
 static struct cdev sdhealth_cdev;        // character device structure
 static struct class *sdhealth_class;     // device class shown under /sys/class
 static struct device *sdhealth_device;   // represents /dev/sdhealth
+static struct timer_list sd_timer;       // linux kernel data structure representing a timer
+static bool initial_reading = true;      // set initial_reading to be true
 
-static unsigned long READ_count = 0;     // stores SD card read operations
-static unsigned long WRITE_count = 0;    // stores SD card write operations
+static unsigned long READ_count = 0;         // stores SD card read operations
+static unsigned long WRITE_count = 0;        // stores SD card write operations
+static unsigned long READ_rate = 0;          // operations per timer interval
+static unsigned long WRITE_rate = 0;         // operations per timer interval
+static unsigned long PREV_READ_count = 0;    // stores previous SD card read operations
+static unsigned long PREV_WRITE_count = 0;   // stores previous SD card write operations
+static unsigned long READ_sectors = 0;
+static unsigned long WRITE_sectors = 0;
+static unsigned long PREV_READ_sectors = 0;
+static unsigned long PREV_WRITE_sectors = 0;
+static unsigned long READ_KBps = 0;
+static unsigned long WRITE_KBps = 0;
+static unsigned long interval_jiffies = HZ;
+static void sd_timer_callback(struct timer_list *t);
+
+
 
 static int sdhealth_open(struct inode *inode, struct file *file)
 {
@@ -26,11 +45,13 @@ static int sdhealth_open(struct inode *inode, struct file *file)
     return 0;
 }
 
+
 static int sdhealth_release(struct inode *inode, struct file *file)
 {
     printk(KERN_INFO "[SDHEALTH] Device closed\n");
     return 0;
 }
+
 
 static void update_stats(void)
 {
@@ -38,6 +59,13 @@ static void update_stats(void)
     char buf[256];
     loff_t pos = 0;
     ssize_t bytes_read;
+
+    unsigned long current_read;
+    unsigned long current_write;
+    unsigned long current_read_sectors;
+    unsigned long current_write_sectors;
+    unsigned long read_sector_delta;
+    unsigned long write_sector_delta;
 
     f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);
     if (IS_ERR(f)) {
@@ -55,13 +83,72 @@ static void update_stats(void)
 
     buf[bytes_read] = '\0';
 
-    sscanf(buf, "%lu %*u %*u %*u %lu", &READ_count, &WRITE_count);
+   
+    if (sscanf(buf, "%lu %*lu %lu %*lu %lu %*lu %lu", &current_read, &current_read_sectors, &current_write, &current_write_sectors) != 4)
+    {
+        printk(KERN_WARNING "[SDHEALTH] Failed to parse the relevant statistics\n");
+        return;
+    }
+
+    
+    if (initial_reading){   // ensures logical starting values upon the first run, function gets skipped after the first run
+
+        READ_rate = 0;
+        WRITE_rate = 0;
+        READ_KBps = 0;
+        WRITE_KBps = 0;
+
+        PREV_READ_count = current_read;
+        PREV_WRITE_count = current_write;
+
+        READ_count = current_read;
+        WRITE_count = current_write;
+
+        PREV_READ_sectors = current_read_sectors;
+        PREV_WRITE_sectors =  current_write_sectors;
+
+        READ_sectors = current_read_sectors;
+        WRITE_sectors = current_write_sectors;
+
+        initial_reading = false;
+        return;
+    }
+
+    READ_rate  = current_read - PREV_READ_count;    // calculation
+    WRITE_rate = current_write - PREV_WRITE_count;  // calculation
+
+    read_sector_delta = current_read_sectors - PREV_READ_sectors;      // calculation
+    write_sector_delta = current_write_sectors - PREV_WRITE_sectors;   // calculation
+
+    READ_KBps = (read_sector_delta * 512) / 1024;
+    WRITE_KBps = (write_sector_delta * 512) / 1024;
+
+    PREV_READ_count  = current_read;                // updates the previous snapshot
+    PREV_WRITE_count = current_write;               // updates the previous snapshot
+
+    PREV_READ_sectors = current_read_sectors;       // updates the previous snapshot
+    PREV_WRITE_sectors = current_write_sectors;     // updates the previous snapshot
+
+    READ_count  = current_read;                     // updates current totals
+    WRITE_count = current_write;                    // updates current totals
+    
+    READ_sectors = current_read_sectors;            // updates current totals
+    WRITE_sectors = current_write_sectors;          // updates current totals
+}
+
+static void sd_timer_callback(struct timer_list *t)
+{
+    update_stats();
+
+    printk(KERN_INFO "[SDHEALTH] Timer updated the following statistics, Read rate: %lu and Write rate: %lu", READ_rate, WRITE_rate);
+
+    mod_timer(&sd_timer, jiffies + interval_jiffies);
 }
 
 static ssize_t sdhealth_read(struct file *file, char __user *buffer,
                              size_t len, loff_t *offset)
 {
-    char msg[128];
+    char msg[256];
     int msg_len;
 
     if (*offset > 0)
@@ -70,8 +157,8 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
     update_stats();
 
     msg_len = snprintf(msg, sizeof(msg),
-                       "SD Health Monitor\nTotal reads: %lu\nTotal writes: %lu\n",
-                       READ_count, WRITE_count);
+                       "SD Health Monitor\nReads: %lu\nWrites: %lu\nRead rate: %lu/sec\nWrite rate: %lu/sec\nRead throughput: %lu KB/s\nWrite throughput: %lu KB/s\nRead sectors: %lu\nWrite sectors: %lu\n",
+                       READ_count, WRITE_count, READ_rate, WRITE_rate, READ_KBps, WRITE_KBps, READ_sectors, WRITE_sectors);
 
     if (copy_to_user(buffer, msg, msg_len))
         return -EFAULT;
@@ -82,6 +169,7 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
 
     return msg_len;
 }
+
 
 static ssize_t sdhealth_write(struct file *file, const char __user *buffer,
                               size_t len, loff_t *offset)
@@ -101,6 +189,7 @@ static ssize_t sdhealth_write(struct file *file, const char __user *buffer,
     return len;
 }
 
+
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = sdhealth_open,
@@ -108,6 +197,7 @@ static struct file_operations fops = {
     .read = sdhealth_read,
     .write = sdhealth_write,
 };
+
 
 static int __init sdhealth_init(void)
 {
@@ -151,8 +241,15 @@ static int __init sdhealth_init(void)
     printk(KERN_INFO "[SDHEALTH] Module loaded successfully\n");
     printk(KERN_INFO "[SDHEALTH] Device created at /dev/%s\n", DEVICE_NAME);
 
+    initial_reading = true;
+
+    timer_setup(&sd_timer, sd_timer_callback, 0);   // API function, calls sd_timer_callback() when the timer expires
+
+    mod_timer(&sd_timer, jiffies + interval_jiffies); // API function, schedules the timer to expire at the specified future jiffy count
+
     return 0;
 }
+
 
 static void __exit sdhealth_exit(void)
 {
@@ -160,9 +257,14 @@ static void __exit sdhealth_exit(void)
     class_destroy(sdhealth_class);
     cdev_del(&sdhealth_cdev);
     unregister_chrdev_region(dev_number, 1);
+    del_timer_sync(&sd_timer);
 
     printk(KERN_INFO "[SDHEALTH] Module unloaded successfully\n");
 }
+
+
+
+
 
 module_init(sdhealth_init);
 module_exit(sdhealth_exit);
