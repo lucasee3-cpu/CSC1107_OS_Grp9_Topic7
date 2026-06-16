@@ -1,0 +1,13 @@
+# Force LF line endings for shell scripts — these MUST use Unix line endings
+# or they will fail with "required file not found" on the Raspberry Pi.
+*.sh text eol=lf
+
+# C source files can use either LF or CRLF
+*.c text
+*.h text
+
+# Markdown files
+*.md text
+
+# Makefile must use tabs (not spaces) — auto-detect
+Makefile text
