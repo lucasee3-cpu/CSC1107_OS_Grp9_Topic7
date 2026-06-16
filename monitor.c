@@ -1,82 +1,342 @@
 /*
- *  monitor.c — User-Space Monitor for SD Card Health Monitoring Driver
- *  CSC1107 Group 9 — Project 7
- *  Automation & Testing: Member 5 (Faris)
+ * This program communicates with the /dev/sdhealth kernel module using
+ * the read() and write() system calls. It presents a simple numbered
+ * menu allowing the user to view SD card stats, check kernel logs,
+ * change the refresh rate, or exit cleanly.
  *
- *  ---------------------------------------------------------------------------
- *  SKELETON VERSION — for testing the automation pipeline (Makefile, run.sh,
- *  cleanup.sh).  This minimal program:
- *
- *    1. Opens  /dev/sdhealth  (the character device created by the LKM).
- *    2. Sends a  write()  command to the kernel module.
- *    3. Reads  the statistics string back from the kernel.
- *    4. Prints  the stats to stdout.
- *
- *  Once Members 1–4 merge their work, this skeleton can be replaced with
- *  the full-featured menu-driven monitor from the kernel-user-comms branch.
- *  ---------------------------------------------------------------------------
- */
+ * Usage: sudo ./monitor
+ * Exit:  Choose option 4 from the menu, or press Ctrl+C
+*/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
+#include <stdio.h>      
+#include <fcntl.h>      
+#include <unistd.h>     
+#include <string.h>     
+#include <signal.h>     
+#include <stdlib.h>     
 
-#define DEVICE_PATH     "/dev/sdhealth"
-#define BUFFER_SIZE      4096
-#define CMD_REQUEST      "REQUEST_STATS"
+/* ------------------------------------------------------------------ */
+/* Constants                                                           */
+/* ------------------------------------------------------------------ */
 
-int main(void)
+#define DEVICE_PATH      "/dev/sdhealth" /* path to the kernel device  */
+#define BUFFER_SIZE      512             /* max bytes to read per poll */
+#define DEFAULT_INTERVAL 2              /* default refresh rate (secs) */
+#define MIN_INTERVAL     1              /* minimum refresh rate (secs) */
+#define MAX_INTERVAL     60             /* maximum refresh rate (secs) */
+#define CMD_REQUEST      "REQUEST_STATS" /* command sent to kernel     */
+#define DMESG_LINES      15             /* number of dmesg lines shown */
+
+
+// Global flag - set to 0 by the signal handler to stop the program
+static volatile int running = 1;
+
+
+
+// Sets running to 0 so loop exits cleanly
+static void handle_sigint(int sig)
 {
-    int  fd;
-    char buffer[BUFFER_SIZE];
-    int  bytes_written;
-    int  bytes_read;
+    (void)sig;
+    running = 0;
+    printf("\n[monitor] Ctrl+C received - returning to menu...\n");
+}
 
-    /* ---- open the device ------------------------------------------------ */
+
+// Clears terminal screen
+static void clear_screen(void)
+{
+    printf("\033[2J\033[H");
+}
+
+// Prints the initial program banner when running the program
+static void print_banner(void)
+{
+    printf("============================================\n");
+    printf("   SD Card Health Monitor - User Space App \n");
+    printf("   Device : %-30s\n", DEVICE_PATH);
+    printf("============================================\n\n");
+}
+
+
+// Prints the menu options
+static void print_menu(int interval)
+{
+    printf("  1. View SD card stats (polling every %d sec)\n", interval);
+    printf("  2. View kernel log (dmesg)\n");
+    printf("  3. Change refresh rate (current: %d sec)\n", interval);
+    printf("  4. Exit\n");
+    printf("\nEnter choice: ");
+}
+
+/* ------------------------------------------------------------------ */
+/* do_single_read                                                      */
+/*                                                                     */
+/* Opens /dev/sdhealth, sends a write() command to the kernel, then  */
+/* reads the stats back with read(). Returns the number of bytes      */
+/* read, or -1 on error.                                              */
+/*                                                                     */
+/* ------------------------------------------------------------------ */
+
+static int do_single_read(char *buffer, size_t buf_size)
+{
+    int fd;
+    int bytes_written;
+    int bytes_read;
+
+    /* Open the device fresh each time to reset the offset */
     fd = open(DEVICE_PATH, O_RDWR);
     if (fd < 0)
     {
-        perror("[monitor] ERROR: Cannot open " DEVICE_PATH);
-        fprintf(stderr,
-                "[monitor] HINT: Is the kernel module loaded?\n"
-                "[monitor] Try:  sudo insmod sdhealth.ko\n");
-        return EXIT_FAILURE;
+        perror("[monitor] ERROR: Failed to open " DEVICE_PATH);
+        return -1;
     }
 
-    printf("[monitor] Connected to %s\n", DEVICE_PATH);
-
-    /* ---- send command to the kernel module ------------------------------ */
+    /* WRITE: send command to kernel - visible in dmesg */
     bytes_written = write(fd, CMD_REQUEST, strlen(CMD_REQUEST));
     if (bytes_written < 0)
     {
         perror("[monitor] ERROR: write() failed");
         close(fd);
-        return EXIT_FAILURE;
+        return -1;
     }
-    printf("[monitor] Sent command: \"%s\" (%d bytes)\n",
-           CMD_REQUEST, bytes_written);
 
-    /* ---- read statistics back from the kernel --------------------------- */
-    bytes_read = read(fd, buffer, sizeof(buffer) - 1);
+    /* READ: receive stats string from kernel */
+    bytes_read = read(fd, buffer, buf_size - 1);
     if (bytes_read < 0)
     {
         perror("[monitor] ERROR: read() failed");
         close(fd);
-        return EXIT_FAILURE;
+        return -1;
     }
 
-    buffer[bytes_read] = '\0';   /* null-terminate for safe printing */
-
-    /* ---- display stats -------------------------------------------------- */
-    printf("\n============================================\n");
-    printf("  SD Card Health Monitor — Statistics\n");
-    printf("============================================\n");
-    printf("%s", buffer);
-    printf("============================================\n");
-
-    /* ---- cleanup -------------------------------------------------------- */
     close(fd);
-    return EXIT_SUCCESS;
+
+    if (bytes_read > 0)
+        buffer[bytes_read] = '\0';  /* null-terminate for safe printing */
+
+    return bytes_read;
+}
+
+/* ------------------------------------------------------------------ */
+/* menu_view_stats                                                     */
+/*                                                                     */
+/* Option 1: Polls /dev/sdhealth repeatedly at the given interval,   */
+/* printing stats each time. Press Ctrl+C to stop polling and return  */
+/* to the main menu.                                                  */
+/* ------------------------------------------------------------------ */
+
+static void menu_view_stats(int interval)
+{
+    char buffer[BUFFER_SIZE];
+    int  bytes_read;
+    int  poll_count = 0;
+
+    /* Reset running flag in case Ctrl+C was pressed before */
+    running = 1;
+
+    clear_screen();
+    printf("============================================\n");
+    printf("  Live SD Card Stats\n");
+    printf("  Refresh: every %d second(s)               \n", interval);
+    printf("============================================\n\n");
+
+    while (running)
+    {
+        poll_count++;
+
+        bytes_read = do_single_read(buffer, sizeof(buffer));
+
+        if (bytes_read < 0)
+        {
+            printf("[monitor] ERROR: Could not read from device\n");
+            break;
+        }
+        else if (bytes_read == 0)
+        {
+            printf("[monitor] WARNING: No data returned from kernel\n");
+        }
+        else
+        {
+            /* Move cursor up to overwrite previous stats for clean display */
+                clear_screen();
+
+            printf("  Poll #%-5d\n", poll_count);
+            printf("--------------------------------------------\n");
+            printf("%s", buffer);
+            printf("--------------------------------------------\n");
+            printf("  Sent : \"%s\" (%lu bytes)\n", CMD_REQUEST, strlen(CMD_REQUEST));
+            printf("  Next update in %d second(s)...\n  Ctrl+C to go back\n", interval);
+        }
+
+        if (running)
+            sleep(interval);
+    }
+
+    /* Restore running flag for the main menu loop */
+    running = 1;
+
+    printf("\n[monitor] Returning to main menu...\n");
+    sleep(1);
+}
+
+/* ------------------------------------------------------------------ */
+/* menu_view_kernel_log                                                */
+/*                                                                     */
+/* Option 2: Runs dmesg and filters for [SDHEALTH] messages so the   */
+/* user can see what the kernel module has been logging.              */
+/* ------------------------------------------------------------------ */
+
+static void menu_view_kernel_log(void)
+{
+    char cmd[128];
+
+    clear_screen();
+    printf("============================================\n");
+    printf("  Kernel Log - [SDHEALTH] messages          \n");
+    printf("============================================\n\n");
+
+    /*
+     * Build a shell command that pipes dmesg through grep to show
+     * only lines from our kernel module, then shows the last
+     * DMESG_LINES of them.
+     */
+    snprintf(cmd, sizeof(cmd),
+             "dmesg | grep '\\[SDHEALTH\\]' | tail -%d", DMESG_LINES);
+
+    printf("Running: %s\n\n", cmd);
+
+    system(cmd);
+
+    printf("\n[Press Enter to return to menu]");
+    getchar();
+}
+
+/* ------------------------------------------------------------------ */
+/* menu_change_interval                                                */
+/*                                                                     */
+/* Option 3: Prompts the user to enter a new refresh rate and         */
+/* validates it is within MIN_INTERVAL and MAX_INTERVAL.              */
+/* Returns the new interval value.                                    */
+/* ------------------------------------------------------------------ */
+
+static int menu_change_interval(int current)
+{
+    char input[32];
+    int  new_interval;
+
+    clear_screen();
+    printf("============================================\n");
+    printf("  Change Refresh Rate                       \n");
+    printf("============================================\n\n");
+    printf("  Current rate : %d second(s)\n", current);
+    printf("  Allowed range: %d - %d seconds\n\n",
+           MIN_INTERVAL, MAX_INTERVAL);
+    printf("  Enter new refresh rate (seconds): ");
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) == NULL)
+    {
+        printf("[monitor] Input error - keeping current rate\n");
+        return current;
+    }
+
+    new_interval = atoi(input);
+
+    if (new_interval < MIN_INTERVAL || new_interval > MAX_INTERVAL)
+    {
+        printf("\n[monitor] Invalid value. Keeping current rate of %d sec\n",
+               current);
+        sleep(2);
+        return current;
+    }
+
+    printf("\n[monitor] Refresh rate updated to %d second(s)\n", new_interval);
+    sleep(1);
+    return new_interval;
+}
+
+/* ------------------------------------------------------------------ */
+/* main                                                                */
+/* ------------------------------------------------------------------ */
+
+int main(void)
+{
+    char input[32];
+    int  choice;
+    int  interval = DEFAULT_INTERVAL;
+
+    /* Register signal handler - Ctrl+C returns to menu, not hard exit */
+    signal(SIGINT, handle_sigint);
+
+    clear_screen();
+    print_banner();
+    printf("  Checking device availability...\n\n");
+
+    /*
+     * Test opens the device before showing the menu
+     * Gives the user a clear error message early rather than
+     * failing silently when they pick option 1.
+     */
+    int test_fd = open(DEVICE_PATH, O_RDWR);
+    if (test_fd < 0)
+    {
+        perror("[monitor] ERROR: Cannot open " DEVICE_PATH);
+        printf("[monitor] Hint: Is the kernel module loaded?\n");
+        printf("[monitor] Try : sudo insmod sdhealth.ko\n");
+        return 1;
+    }
+    close(test_fd);
+    printf("  Device found at %s\n\n", DEVICE_PATH);
+
+    /* ------------------------------------------------------------- */
+    /* Main menu loop                                                 */
+    /* ------------------------------------------------------------- */
+
+    while (running)
+    {
+        clear_screen();
+        print_banner();
+        print_menu(interval);
+
+        if (fgets(input, sizeof(input), stdin) == NULL)
+            break;
+
+        choice = atoi(input);
+
+        switch (choice)
+        {
+            case 1:
+                menu_view_stats(interval);
+                break;
+
+            case 2:
+                menu_view_kernel_log();
+                break;
+
+            case 3:
+                interval = menu_change_interval(interval);
+                break;
+
+            case 4:
+                running = 0;
+                break;
+
+            default:
+                printf("\n[monitor] Invalid choice. Please enter 1-4.\n");
+                sleep(1);
+                break;
+        }
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Exit                                                           */
+    /* ------------------------------------------------------------- */
+
+    clear_screen();
+    printf("============================================\n");
+    printf("  SD Card Health Monitor - Goodbye!         \n");
+    printf("  Check full kernel log: sudo dmesg | grep -i SDHEALTH\n");
+    printf("============================================\n");
+
+    return 0;
 }
