@@ -68,20 +68,16 @@ static void update_stats(void)
     unsigned long write_sector_delta;
 
     f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);
-    if (IS_ERR(f))
-    {
-        printk(KERN_ERR,
-            "[SDHEALTH] ERROR: Failed to open /sys/block/mmcblk0/stat\n");
+    if (IS_ERR(f)) {
+        printk(KERN_WARNING "[SDHEALTH] Failed to open /sys/block/mmcblk0/stat\n");
         return;
     }
 
     bytes_read = kernel_read(f, buf, sizeof(buf) - 1, &pos);
     filp_close(f, NULL);
 
-    if (bytes_read <= 0)
-    {
-        printk(KERN_ERR,
-            "[SDHEALTH] ERROR: Failed to read SD card stats\n");
+    if (bytes_read <= 0) {
+        printk(KERN_WARNING "[SDHEALTH] Failed to read SD card stats\n");
         return;
     }
 
@@ -158,7 +154,12 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
     if (*offset > 0)
         return 0;
 
-    update_stats();
+    /*
+     * No update_stats() call here — the timer handles all stat updates
+     * via sd_work_handler() every second. sdhealth_read() just serves
+     * the most recently computed values, avoiding any race condition
+     * between the timer and user-space reads.
+     */
 
     check_anomaly(READ_count, WRITE_count);
 
@@ -174,8 +175,6 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
         return -EFAULT;
 
     *offset += msg_len;
-
-    printk(KERN_INFO "[SDHEALTH] Read statistics sent to user space\n");
 
     return msg_len;
 }
@@ -263,7 +262,9 @@ static int __init sdhealth_init(void)
 
 static void __exit sdhealth_exit(void)
 {
-    print_event_logs();
+    cancel_work_sync(&sd_work);         /* wait for any running work to finish before exit */
+    timer_delete_sync(&sd_timer);       /* wait for any running timer callback to finish   */
+
     device_destroy(sdhealth_class, dev_number);
     class_destroy(sdhealth_class);
     cdev_del(&sdhealth_cdev);
