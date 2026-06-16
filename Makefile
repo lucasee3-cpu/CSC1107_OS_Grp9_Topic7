@@ -19,21 +19,23 @@
 # =============================================================================
 
 # ---- detect which source layout is present --------------------------------
-SDHEALTH_MAIN := $(wildcard sdhealth_main.c)
-DETECTION_C   := $(wildcard detection.c)
-SINGLE_SRC    := $(wildcard sdhealth.c)
+# $(src) is set by the kernel build system to the directory containing this
+# Makefile.  Fall back to $(CURDIR) when invoked directly (e.g. 'make clean').
+MY_SRC_DIR := $(if $(src),$(src),$(CURDIR))
+
+SDHEALTH_MAIN := $(wildcard $(MY_SRC_DIR)/sdhealth_main.c)
+DETECTION_C   := $(wildcard $(MY_SRC_DIR)/detection.c)
+SINGLE_SRC    := $(wildcard $(MY_SRC_DIR)/sdhealth.c)
 
 ifneq ($(SDHEALTH_MAIN)$(DETECTION_C),)
   # multi-file layout (matches detection-logging / kernel-user-comms branches)
   obj-m           += sdhealth.o
   sdhealth-objs   := sdhealth_main.o detection.o
-  KERN_SRC        := sdhealth_main.c detection.c detection.h
 else ifneq ($(SINGLE_SRC),)
   # single-file fallback (current main branch)
   obj-m           += sdhealth.o
-  KERN_SRC        := sdhealth.c
 else
-  $(error No kernel source found. Expected sdhealth_main.c+detection.c or sdhealth.c)
+  $(error No kernel source found in $(MY_SRC_DIR). Expected sdhealth_main.c+detection.c or sdhealth.c)
 endif
 
 # ---- user-space monitor ----------------------------------------------------
