@@ -109,8 +109,8 @@ echo "============================================"
 sudo dmesg -c > /dev/null 2>&1
 sudo cat "$DEVICE" > /dev/null 2>&1
 
-WRITE_WARNINGS=$(sudo dmesg | grep -c 'Excessive write' 2>/dev/null || echo 0)
-READ_WARNINGS=$(sudo dmesg  | grep -c 'Excessive read'  2>/dev/null || echo 0)
+WRITE_WARNINGS=$(sudo dmesg 2>/dev/null | grep -c 'Excessive write' || true)
+READ_WARNINGS=$(sudo dmesg 2>/dev/null | grep -c 'Excessive read' || true)
 
 echo "  Detected write warnings in dmesg: ${WRITE_WARNINGS}"
 echo "  Detected read warnings  in dmesg: ${READ_WARNINGS}"
@@ -144,8 +144,8 @@ sudo cat "$DEVICE" > /dev/null 2>&1
 sleep 1
 sudo cat "$DEVICE" > /dev/null 2>&1
 
-WRITE_WARN_TWO=$(sudo dmesg | grep -c 'Excessive write' 2>/dev/null || echo 0)
-READ_WARN_TWO=$(sudo dmesg  | grep -c 'Excessive read'  2>/dev/null || echo 0)
+WRITE_WARN_TWO=$(sudo dmesg 2>/dev/null | grep -c 'Excessive write' || true)
+READ_WARN_TWO=$(sudo dmesg 2>/dev/null | grep -c 'Excessive read' || true)
 
 echo "  Write warnings after 2 consecutive reads: ${WRITE_WARN_TWO}"
 echo "  Read warnings  after 2 consecutive reads: ${READ_WARN_TWO}"
@@ -187,7 +187,7 @@ else
     echo -e "  ${FAIL} Zero-length read returned: ${ZERO_TEST}"
 fi
 
-ZERO_DMESG=$(sudo dmesg | grep -ci 'Oops\|BUG\|panic' 2>/dev/null || echo 0)
+ZERO_DMESG=$(sudo dmesg 2>/dev/null | grep -ci 'Oops\|BUG\|panic' || true)
 if [ "$ZERO_DMESG" -eq 0 ]; then
     echo -e "  ${PASS} No kernel errors from zero-length read."
 else
