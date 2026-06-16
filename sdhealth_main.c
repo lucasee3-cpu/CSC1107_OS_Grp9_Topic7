@@ -10,7 +10,7 @@
 #include <linux/uaccess.h>
 #include <linux/timer.h>
 #include <linux/types.h>
-
+#include "detection.h"
 
 #define DEVICE_NAME "sdhealth"
 #define CLASS_NAME  "sdhealth_class"
@@ -68,16 +68,20 @@ static void update_stats(void)
     unsigned long write_sector_delta;
 
     f = filp_open("/sys/block/mmcblk0/stat", O_RDONLY, 0);
-    if (IS_ERR(f)) {
-        printk(KERN_WARNING "[SDHEALTH] Failed to open /sys/block/mmcblk0/stat\n");
+    if (IS_ERR(f))
+    {
+        printk(KERN_ERR,
+            "[SDHEALTH] ERROR: Failed to open /sys/block/mmcblk0/stat\n");
         return;
     }
 
     bytes_read = kernel_read(f, buf, sizeof(buf) - 1, &pos);
     filp_close(f, NULL);
 
-    if (bytes_read <= 0) {
-        printk(KERN_WARNING "[SDHEALTH] Failed to read SD card stats\n");
+    if (bytes_read <= 0)
+    {
+        printk(KERN_ERR,
+            "[SDHEALTH] ERROR: Failed to read SD card stats\n");
         return;
     }
 
@@ -156,9 +160,15 @@ static ssize_t sdhealth_read(struct file *file, char __user *buffer,
 
     update_stats();
 
+    check_anomaly(READ_count, WRITE_count);
+
     msg_len = snprintf(msg, sizeof(msg),
                        "SD Health Monitor\nReads: %lu\nWrites: %lu\nRead rate: %lu/sec\nWrite rate: %lu/sec\nRead throughput: %lu KB/s\nWrite throughput: %lu KB/s\nRead sectors: %lu\nWrite sectors: %lu\n",
                        READ_count, WRITE_count, READ_rate, WRITE_rate, READ_KBps, WRITE_KBps, READ_sectors, WRITE_sectors);
+
+    /* Prevent copying more bytes than the user requested */
+    if (msg_len > len)
+        msg_len = len;
 
     if (copy_to_user(buffer, msg, msg_len))
         return -EFAULT;
@@ -253,6 +263,7 @@ static int __init sdhealth_init(void)
 
 static void __exit sdhealth_exit(void)
 {
+    print_event_logs();
     device_destroy(sdhealth_class, dev_number);
     class_destroy(sdhealth_class);
     cdev_del(&sdhealth_cdev);
