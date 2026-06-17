@@ -192,7 +192,7 @@ echo "  Total log lines collected: ${TOTAL_LINES}"
 MISMATCHES=0
 for (( i=0; i<READERS-1; i++ )); do
     F1="${LOG_DIR}/reader_${i}.log"
-    F2="${LOG_DIR}/reader_${((i+1))}.log"
+    F2="${LOG_DIR}/reader_$((i+1)).log"
 
     if [ -f "$F1" ] && [ -f "$F2" ]; then
         STATS1=$(grep -oP 'Reads:.*' "$F1" 2>/dev/null | sort -u || true)
