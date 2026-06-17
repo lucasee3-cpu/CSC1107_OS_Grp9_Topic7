@@ -47,7 +47,7 @@ if ! lsmod | grep -q "^${MODULE_NAME}" 2>/dev/null; then
     :  # module not loaded — expected
 else
     echo -e "${INFO} Module already loaded — removing first."
-    sudo rmmod "$MODULE_NAME"
+    timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
 fi
 
 # ---- capture baseline memory -----------------------------------------------
@@ -62,22 +62,22 @@ FAIL_COUNT=0
 
 for (( i=1; i<=CYCLES; i++ )); do
     # LOAD
-    if sudo insmod "$KO_FILE" 2>/dev/null; then
+    if timeout 10 sudo insmod "$KO_FILE" 2>/dev/null; then
         sleep "$WAIT_SEC"
     else
-        echo -e "${FAIL} Cycle $i: insmod failed"
+        echo -e "${FAIL} Cycle $i: insmod failed (or timed out)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+        timeout 5 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
         continue
     fi
 
     # UNLOAD
-    if sudo rmmod "$MODULE_NAME" 2>/dev/null; then
+    if timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null; then
         PASS_COUNT=$((PASS_COUNT + 1))
     else
-        echo -e "${FAIL} Cycle $i: rmmod failed (module stuck in use?)"
+        echo -e "${FAIL} Cycle $i: rmmod failed (module stuck or timed out)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+        timeout 5 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
         continue
     fi
 

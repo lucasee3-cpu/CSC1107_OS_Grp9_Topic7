@@ -41,7 +41,7 @@ fi
 # ---- step 2: remove kernel module ------------------------------------------
 echo_info "Step 2/3 — Removing sdhealth kernel module..."
 if lsmod | grep -q "^sdhealth"; then
-    sudo rmmod sdhealth && echo_info "Module sdhealth removed." \
+    timeout 10 sudo rmmod sdhealth && echo_info "Module sdhealth removed." \
         || echo_error "Failed to remove sdhealth. Is a process still using /dev/sdhealth?"
 else
     echo_info "sdhealth module is not loaded — nothing to remove."

@@ -53,7 +53,7 @@ cleanup() {
     if [ -f "./cleanup.sh" ]; then
         bash ./cleanup.sh 2>/dev/null || true
     else
-        sudo rmmod sdhealth 2>/dev/null || true
+        timeout 10 sudo rmmod sdhealth 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -99,7 +99,7 @@ run_test() {
         return
     fi
 
-    sudo rmmod sdhealth 2>/dev/null || true
+    timeout 10 sudo rmmod sdhealth 2>/dev/null || true
     sleep 1
 
     local exit_code=0

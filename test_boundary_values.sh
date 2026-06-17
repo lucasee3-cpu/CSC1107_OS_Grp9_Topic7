@@ -49,7 +49,7 @@ READ_THRESHOLD=5000
 cleanup() {
     echo -e "${INFO} Cleaning up..."
     rm -rf "$TEMP_DIR"
-    sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+    timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -79,9 +79,9 @@ if [ ! -f "$STAT_FILE" ]; then
 fi
 
 # ---- load module fresh -----------------------------------------------------
-sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
 sleep 1
-sudo insmod "$KO_FILE"
+timeout 10 sudo insmod "$KO_FILE"
 sudo chmod 666 "$DEVICE"
 
 # ---- get baseline counts ---------------------------------------------------
@@ -201,7 +201,7 @@ echo "============================================"
 echo "  Test 4: Module Unload After Testing"
 echo "============================================"
 
-if sudo rmmod "$MODULE_NAME" 2>/dev/null; then
+if timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null; then
     echo -e "  ${PASS} Module unloaded cleanly after all tests."
 else
     echo -e "  ${FAIL} Module could not be unloaded."

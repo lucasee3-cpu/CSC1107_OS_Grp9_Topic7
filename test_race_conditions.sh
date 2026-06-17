@@ -46,7 +46,7 @@ cleanup() {
     echo -e "${INFO} Cleaning up test processes..."
     pkill -f "sdhealth_race_reader" 2>/dev/null || true
     pkill -f "sdhealth_race_writer" 2>/dev/null || true
-    sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+    timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
     echo -e "${INFO} Test artifacts preserved in: ${LOG_DIR}"
 }
 trap cleanup EXIT
@@ -106,11 +106,11 @@ if [ ! -f "$KO_FILE" ]; then
 fi
 
 if lsmod | grep -q "^${MODULE_NAME}"; then
-    sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+    timeout 10 sudo rmmod "$MODULE_NAME" 2>/dev/null || true
     sleep 1
 fi
 
-sudo insmod "$KO_FILE"
+timeout 10 sudo insmod "$KO_FILE"
 sudo chmod 666 "$DEVICE"
 
 if [ ! -e "$DEVICE" ]; then
