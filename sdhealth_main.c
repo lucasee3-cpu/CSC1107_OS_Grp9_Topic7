@@ -268,7 +268,8 @@ static void __exit sdhealth_exit(void)
     class_destroy(sdhealth_class);
     cdev_del(&sdhealth_cdev);
     unregister_chrdev_region(dev_number, 1);
-    del_timer_sync(&sd_timer);
+    // del_timer_sync(&sd_timer);
+    timer_delete_sync(&sd_timer);
 
     printk(KERN_INFO "[SDHEALTH] Module unloaded successfully\n");
 }
