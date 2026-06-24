@@ -12,6 +12,7 @@
 #include <fcntl.h>      
 #include <unistd.h>     
 #include <string.h>     
+#include <strings.h>    /* strcasecmp() for case-insensitive "all" check */
 #include <signal.h>     
 #include <stdlib.h>     
 
@@ -188,24 +189,99 @@ static void menu_view_stats(int interval)
 
 static void menu_view_kernel_log(void)
 {
-    char cmd[128];
+    char cmd[160];
+    char input[32];
+    int  num_lines;
+    int  show_all_lines = 0;
+    int  full_kernel_log = 0;
 
     clear_screen();
     printf("============================================\n");
-    printf("  Kernel Log - [SDHEALTH] messages          \n");
+    printf("  Kernel Log Viewer                          \n");
     printf("============================================\n\n");
 
+    /* --- Scope choice: filtered (default) vs full kernel log --------- */
+    printf("  View [1] SDHEALTH messages only, or [2] full kernel log?\n");
+    printf("  [default: 1] : ");
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) != NULL)
+    {
+        input[strcspn(input, "\n")] = '\0';
+
+        if (strcmp(input, "2") == 0)
+        {
+            full_kernel_log = 1;
+        }
+        /* anything else (including blank Enter, "1", or junk) stays
+         * with the default filtered view */
+    }
+
+    /* --- Line count choice -------------------------------------------- */
+    printf("\n  How many lines do you want to view?\n");
+    printf("  (Enter a number, or type 'all' for the full log)\n");
+    printf("  [default: %d] : ", DMESG_LINES);
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) == NULL)
+    {
+        num_lines = DMESG_LINES;
+    }
+    else
+    {
+        /* strip the trailing newline so strcmp works as expected */
+        input[strcspn(input, "\n")] = '\0';
+
+        if (strlen(input) == 0)
+        {
+            /* user just pressed Enter - use the default */
+            num_lines = DMESG_LINES;
+        }
+        else if (strcasecmp(input, "all") == 0)
+        {
+            show_all_lines = 1;
+        }
+        else
+        {
+            num_lines = atoi(input);
+            if (num_lines <= 0)
+            {
+                printf("\n[monitor] Invalid number - using default (%d)\n",
+                       DMESG_LINES);
+                num_lines = DMESG_LINES;
+            }
+        }
+    }
+
     /*
-     * Build a shell command that pipes dmesg through grep to show
-     * only lines from our kernel module, then shows the last
-     * DMESG_LINES of them.
+     * Build the shell command from the two independent choices:
+     *   - scope     : filtered to [SDHEALTH] only, or the full kernel log
+     *   - line count: a specific number, or "all" (no tail filter)
      */
-    snprintf(cmd, sizeof(cmd),
-             "dmesg | grep '\\[SDHEALTH\\]' | tail -%d", DMESG_LINES);
+    if (full_kernel_log && show_all_lines)
+    {
+        snprintf(cmd, sizeof(cmd), "dmesg");
+    }
+    else if (full_kernel_log)
+    {
+        snprintf(cmd, sizeof(cmd), "dmesg | tail -%d", num_lines);
+    }
+    else if (show_all_lines)
+    {
+        snprintf(cmd, sizeof(cmd), "dmesg | grep '\\[SDHEALTH\\]'");
+    }
+    else
+    {
+        snprintf(cmd, sizeof(cmd),
+                 "dmesg | grep '\\[SDHEALTH\\]' | tail -%d", num_lines);
+    }
 
-    printf("Running: %s\n\n", cmd);
+    printf("\nRunning: %s\n\n", cmd);
 
-    system(cmd);
+    if (system(cmd) == -1)
+    {
+        printf("[monitor] WARNING: Failed to execute dmesg command\n");
+    }
 
     printf("\n[Press Enter to return to menu]");
     getchar();
