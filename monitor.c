@@ -1,11 +1,11 @@
 /*
  * This program communicates with the /dev/sdhealth kernel module using
  * the read() and write() system calls. It presents a simple numbered
- * menu allowing the user to view SD card stats, check kernel logs,
- * change the refresh rate, or exit cleanly.
+ * menu allowing the user to view SD card stats (choosing the poll
+ * interval), check kernel logs, or exit cleanly.
  *
  * Usage: sudo ./monitor
- * Exit:  Choose option 4 from the menu, or press Ctrl+C
+ * Exit:  Choose option 3 from the menu, or press Ctrl+C
 */
 
 #include <stdio.h>      
@@ -60,12 +60,11 @@ static void print_banner(void)
 
 
 // Prints the menu options
-static void print_menu(int interval)
+static void print_menu(void)
 {
-    printf("  1. View SD card stats (polling every %d sec)\n", interval);
+    printf("  1. View SD card stats (live polling)\n");
     printf("  2. View kernel log (dmesg)\n");
-    printf("  3. Change refresh rate (current: %d sec)\n", interval);
-    printf("  4. Exit\n");
+    printf("  3. Exit\n");
     printf("\nEnter choice: ");
 }
 
@@ -119,18 +118,67 @@ static int do_single_read(char *buffer, size_t buf_size)
 }
 
 /* ------------------------------------------------------------------ */
-/* menu_view_stats                                                     */
+/* prompt_interval                                                     */
 /*                                                                     */
-/* Option 1: Polls /dev/sdhealth repeatedly at the given interval,   */
-/* printing stats each time. Press Ctrl+C to stop polling and return  */
-/* to the main menu.                                                  */
+/* Asks the user how often to poll, validates the value against        */
+/* MIN_INTERVAL/MAX_INTERVAL, and returns the chosen interval.         */
+/* Pressing Enter with no input keeps the default.                     */
 /* ------------------------------------------------------------------ */
 
-static void menu_view_stats(int interval)
+static int prompt_interval(void)
+{
+    char input[32];
+    int  interval;
+
+    printf("  How often should the stats refresh?\n");
+    printf("  (Enter %d-%d seconds, or press Enter for default %d)\n",
+           MIN_INTERVAL, MAX_INTERVAL, DEFAULT_INTERVAL);
+    printf("  Interval : ");
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) == NULL)
+        return DEFAULT_INTERVAL;
+
+    input[strcspn(input, "\n")] = '\0';
+
+    /* Blank input (just Enter) keeps the default */
+    if (strlen(input) == 0)
+        return DEFAULT_INTERVAL;
+
+    interval = atoi(input);
+
+    if (interval < MIN_INTERVAL || interval > MAX_INTERVAL)
+    {
+        printf("\n[monitor] Invalid value - using default %d sec\n",
+               DEFAULT_INTERVAL);
+        sleep(1);
+        return DEFAULT_INTERVAL;
+    }
+
+    return interval;
+}
+
+/* ------------------------------------------------------------------ */
+/* menu_view_stats                                                     */
+/*                                                                     */
+/* Option 1: Asks the user for a poll interval, then polls            */
+/* /dev/sdhealth repeatedly at that interval, printing stats each     */
+/* time. Press Ctrl+C to stop polling and return to the main menu.    */
+/* ------------------------------------------------------------------ */
+
+static void menu_view_stats(void)
 {
     char buffer[BUFFER_SIZE];
     int  bytes_read;
     int  poll_count = 0;
+    int  interval;
+
+    /* Ask how often to poll before starting */
+    clear_screen();
+    printf("============================================\n");
+    printf("  Live SD Card Stats - Setup                \n");
+    printf("============================================\n\n");
+    interval = prompt_interval();
 
     /* Reset running flag in case Ctrl+C was pressed before */
     running = 1;
@@ -288,50 +336,6 @@ static void menu_view_kernel_log(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* menu_change_interval                                                */
-/*                                                                     */
-/* Option 3: Prompts the user to enter a new refresh rate and         */
-/* validates it is within MIN_INTERVAL and MAX_INTERVAL.              */
-/* Returns the new interval value.                                    */
-/* ------------------------------------------------------------------ */
-
-static int menu_change_interval(int current)
-{
-    char input[32];
-    int  new_interval;
-
-    clear_screen();
-    printf("============================================\n");
-    printf("  Change Refresh Rate                       \n");
-    printf("============================================\n\n");
-    printf("  Current rate : %d second(s)\n", current);
-    printf("  Allowed range: %d - %d seconds\n\n",
-           MIN_INTERVAL, MAX_INTERVAL);
-    printf("  Enter new refresh rate (seconds): ");
-    fflush(stdout);
-
-    if (fgets(input, sizeof(input), stdin) == NULL)
-    {
-        printf("[monitor] Input error - keeping current rate\n");
-        return current;
-    }
-
-    new_interval = atoi(input);
-
-    if (new_interval < MIN_INTERVAL || new_interval > MAX_INTERVAL)
-    {
-        printf("\n[monitor] Invalid value. Keeping current rate of %d sec\n",
-               current);
-        sleep(2);
-        return current;
-    }
-
-    printf("\n[monitor] Refresh rate updated to %d second(s)\n", new_interval);
-    sleep(1);
-    return new_interval;
-}
-
-/* ------------------------------------------------------------------ */
 /* main                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -339,7 +343,6 @@ int main(void)
 {
     char input[32];
     int  choice;
-    int  interval = DEFAULT_INTERVAL;
 
     /* Register signal handler - Ctrl+C returns to menu, not hard exit */
     signal(SIGINT, handle_sigint);
@@ -372,7 +375,7 @@ int main(void)
     {
         clear_screen();
         print_banner();
-        print_menu(interval);
+        print_menu();
 
         if (fgets(input, sizeof(input), stdin) == NULL)
             break;
@@ -382,7 +385,7 @@ int main(void)
         switch (choice)
         {
             case 1:
-                menu_view_stats(interval);
+                menu_view_stats();
                 break;
 
             case 2:
@@ -390,15 +393,11 @@ int main(void)
                 break;
 
             case 3:
-                interval = menu_change_interval(interval);
-                break;
-
-            case 4:
                 running = 0;
                 break;
 
             default:
-                printf("\n[monitor] Invalid choice. Please enter 1-4.\n");
+                printf("\n[monitor] Invalid choice. Please enter 1-3.\n");
                 sleep(1);
                 break;
         }
