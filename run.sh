@@ -42,9 +42,9 @@ fi
 echo_info "Step 2/4 — Inserting sdhealth.ko into the kernel..."
 if lsmod | grep -q "^sdhealth"; then
     echo_warn "sdhealth module is already loaded — removing it first."
-    timeout 10 sudo rmmod sdhealth 2>/dev/null || true
+    sudo timeout 10 rmmod sdhealth 2>/dev/null || true
 fi
-timeout 10 sudo insmod sdhealth.ko
+sudo timeout 10 insmod sdhealth.ko
 echo_info "Module loaded.  Verify:  lsmod | grep sdhealth"
 
 # ---- step 3: set device permissions ----------------------------------------
