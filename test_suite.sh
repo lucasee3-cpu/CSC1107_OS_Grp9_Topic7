@@ -136,6 +136,8 @@ echo ""
 
 # Test 1: Sanity Check (always quick)
 run_test "Sanity Check"      "./sanity_check.sh"
+# Sanity check runs make clean at the end — rebuild so other tests have sdhealth.ko
+make 2>/dev/null || true
 
 # Test 2: Memory Leak
 if [ "$QUICK_MODE" -eq 1 ]; then

@@ -130,8 +130,9 @@ fi
 
 # ---- 10: no stray files -----------------------------------------------------
 check "No stray kernel objects"
-STRAY=$(ls *.ko 2>/dev/null | wc -l || echo 0)
-if [ "$STRAY" -eq 0 ]; then
+STRAY=$(ls *.ko 2>/dev/null | wc -l)
+STRAY=$(echo "$STRAY" | tr -d ' ')
+if [ "$STRAY" -eq 0 ] 2>/dev/null; then
     pass
 else
     fail "$STRAY .ko file(s) still present"
