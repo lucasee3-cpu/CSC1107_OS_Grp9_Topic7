@@ -142,7 +142,7 @@ static void update_stats(void)
 
 static void sd_timer_callback(struct timer_list *t)
 {
-    //update_stats();
+    update_stats();
 
     printk(KERN_INFO "[SDHEALTH] Timer updated the following statistics, Read rate: %lu and Write rate: %lu", READ_rate, WRITE_rate);
 
