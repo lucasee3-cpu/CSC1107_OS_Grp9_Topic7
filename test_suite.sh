@@ -105,7 +105,7 @@ run_test() {
     fi
 
     sudo rmmod sdhealth 2>/dev/null || true
-    sleep 1
+    sleep 2
 
     local test_start=$(date +%s)
     local exit_code=0

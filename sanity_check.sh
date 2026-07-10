@@ -98,7 +98,10 @@ fi
 
 # ---- 6: kernel log output ---------------------------------------------------
 check "Kernel log contains [SDHEALTH] messages"
-if sudo dmesg | grep -q '\[SDHEALTH\]'; then
+sleep 0.5
+# Capture dmesg first to avoid pipefail + grep -q SIGPIPE race
+DMESG_SNAP=$(sudo dmesg 2>/dev/null)
+if grep -q 'SDHEALTH' <<< "$DMESG_SNAP"; then
     pass
 else
     fail "no [SDHEALTH] messages in dmesg"
@@ -106,7 +109,7 @@ fi
 
 # ---- 7: detection -----------------------------------------------------------
 check "Anomaly detection check_anomaly() called"
-if sudo dmesg | grep -q 'check_anomaly()'; then
+if grep -q 'check_anomaly()' <<< "$DMESG_SNAP"; then
     pass
 else
     fail "check_anomaly() not found in dmesg — detection may not be running"

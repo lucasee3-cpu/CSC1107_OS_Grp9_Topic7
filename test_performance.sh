@@ -99,6 +99,9 @@ echo "============================================"
 RMMOD_FILE="/tmp/sdhealth_perf_rmmod.tmp"
 > "$RMMOD_FILE"
 
+# Ensure module is unloaded before starting rmmod latency test
+sudo rmmod "$MODULE_NAME" 2>/dev/null || true
+
 for (( i=1; i<=ITERATIONS; i++ )); do
     sudo insmod "$KO_FILE" 2>/dev/null
     sleep 0.05

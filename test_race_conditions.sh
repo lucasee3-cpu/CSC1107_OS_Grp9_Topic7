@@ -148,10 +148,19 @@ sleep "$DURATION"
 echo -e "${INFO} Time's up — waiting for children to exit..."
 
 # ---- wait for all processes ------------------------------------------------
+# Kill any remaining reader/writer processes first
+pkill -f sdhealth_race_reader 2>/dev/null || true
+pkill -f sdhealth_race_writer 2>/dev/null || true
+sleep 1
+
+# Wait with timeout — processes stuck in D-state (kernel lock) cannot be killed,
+# so we give each one at most 5 seconds before moving on
 for pid in "${READER_PIDS[@]}"; do
-    wait "$pid" 2>/dev/null || true
+    timeout 5 wait "$pid" 2>/dev/null || true
 done
-wait "$WRITER_PID" 2>/dev/null || true
+timeout 5 wait "$WRITER_PID" 2>/dev/null || true
+
+echo -e "${INFO} All reader/writer processes have been collected."
 
 # ---- check dmesg for kernel errors -----------------------------------------
 echo ""
